@@ -7,13 +7,13 @@ export function InnerWgpuApp(args: { width: number; height: number }) {
 
   useEffect(() => {
     const asyncInit = async (canvasElem: HTMLCanvasElement) => {
-      const { adapter, device } = await getWgpuAdadpterAndDevice();
+      const wgpuAdapterDevice = await getWgpuAdadpterAndDevice();
 
-      if (device === null) {
+      if (wgpuAdapterDevice.device === null) {
         throw new Error("Webpgu not supported");
       }
 
-      const engine = new WebgpuEngine(canvasElem, device);
+      const engine = new WebgpuEngine(canvasElem, wgpuAdapterDevice.device);
       engine.startEngine();
     };
 
