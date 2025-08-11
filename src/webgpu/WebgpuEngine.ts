@@ -4,12 +4,24 @@ import baseShader from "../shaders/baseshader.wgsl?raw";
 
 export class WebgpuEngine {
   private readonly context: GPUCanvasContext;
-  private readonly buffers: { [key: string]: GPUBuffer } = {}
-  private readonly bufferLayouts: { [key: string]: GPUVertexBufferLayout } = {}
-  private readonly shaderModules: { [key: string]: GPUShaderModule } = {}
+  private readonly buffers: { [key: string]: GPUBuffer } = {};
+  private readonly bufferLayouts: { [key: string]: GPUVertexBufferLayout } = {};
+  private readonly shaderModules: { [key: string]: GPUShaderModule } = {};
   private readonly canvasFormat: GPUTextureFormat;
 
-  private readonly gpuRenderPipelines: { [key: string]: GPURenderPipeline } = {};
+  private readonly gpuRenderPipelines: { [key: string]: GPURenderPipeline } =
+    {};
+
+  private readonly bindGroups: { [key: string]: GPUBindGroup } = {};
+
+  private totalTime: number = 0;
+  private programRunning: boolean = true;
+
+  private engineData: {
+    color: Float32Array;
+  } = {
+    color: new Float32Array([0, 0, 0, 0]),
+  };
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -28,83 +40,130 @@ export class WebgpuEngine {
   }
 
   loadShaderModules() {
-    this.shaderModules['base'] = this.device.createShaderModule({
-      label: 'base',
-      code: baseShader
+    this.shaderModules["base"] = this.device.createShaderModule({
+      label: "base",
+      code: baseShader,
     });
   }
 
   createRenderPipeline() {
     return this.device.createRenderPipeline({
-      label: 'base pipeline',
-      layout: 'auto',
+      label: "base pipeline",
+      layout: "auto",
       vertex: {
-        module: this.shaderModules['base'],
-        entryPoint: 'vertexMain',
-        buffers: [this.bufferLayouts['base']]
+        module: this.shaderModules["base"],
+        entryPoint: "vertexMain",
+        buffers: [this.bufferLayouts["base"]],
       },
 
       fragment: {
-        module: this.shaderModules['base'],
-        entryPoint: 'fragmentMain',
-        targets: [{
-          format: this.canvasFormat
-        }]
-      }
-    })
+        module: this.shaderModules["base"],
+        entryPoint: "fragmentMain",
+        targets: [
+          {
+            format: this.canvasFormat,
+          },
+        ],
+      },
+    });
   }
 
-  createCommandBuffer(): GPUCommandBuffer {
+  createCommandBuffer(
+    drawFunction: (pass: GPURenderPassEncoder) => void,
+  ): GPUCommandBuffer {
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
-      colorAttachments: [{
-        view: this.context.getCurrentTexture().createView(),
-        loadOp: "clear",
-        clearValue: { a: 1, r: 0.5, b: 0.9, g: 0.33 },
-        storeOp: "store",
-      }]
+      colorAttachments: [
+        {
+          view: this.context.getCurrentTexture().createView(),
+          loadOp: "clear",
+          clearValue: { a: 1, r: 0, b: 0, g: 0 },
+          storeOp: "store",
+        },
+      ],
     });
 
-    pass.setPipeline(this.gpuRenderPipelines['base'])
-    pass.setVertexBuffer(0, this.buffers['tri'])
-    pass.draw(3);
+    drawFunction(pass);
 
     pass.end();
     return encoder.finish();
   }
 
-  private async runAsync() {
-    const buffer = this.createCommandBuffer();
+  tickEngine(deltaTime: number) {
+    this.totalTime += deltaTime;
+    this.engineData.color[0] = (Math.sin(this.totalTime / 1000) + 1) / 2;
+    console.log(deltaTime);
+  }
+
+  drawFrame() {
+    this.device.queue.writeBuffer(
+      this.buffers["uniform"],
+      0,
+      this.engineData.color.buffer,
+    );
+
+    const buffer = this.createCommandBuffer((pass) => {
+      pass.setPipeline(this.gpuRenderPipelines["base"]);
+      pass.setVertexBuffer(0, this.buffers["tri"]);
+      pass.setBindGroup(0, this.bindGroups["bg1"]);
+      pass.draw(3);
+    });
     this.device.queue.submit([buffer]);
   }
 
+  private async runAsync() {
+    let lastEngineTick = Date.now();
+    while (this.programRunning) {
+      const currentTick = Date.now();
+      this.tickEngine(currentTick - lastEngineTick);
+      this.drawFrame();
+      await new Promise((resolve) => setTimeout(resolve, 3));
+      lastEngineTick = currentTick;
+    }
+  }
+
   public startEngine() {
-    const verts = new Float32Array([
-      -0.8, -0.8,
-      0.8, -0.8,
-      0.8, 0.8
-    ]);
+    const verts = new Float32Array([-0.8, -0.8, 0.8, -0.8, 0.8, 0.8]);
 
-    this.buffers['tri'] = this.device.createBuffer({
-      label: 'tri',
+    this.buffers["tri"] = this.device.createBuffer({
+      label: "tri",
       size: verts.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.buffers['tri'], 0, verts)
+    this.device.queue.writeBuffer(this.buffers["tri"], 0, verts);
 
-    this.bufferLayouts['base'] = {
+    this.bufferLayouts["base"] = {
       arrayStride: 8,
-      attributes: [{
-        format: "float32x2",
-        offset: 0,
-        shaderLocation: 0
-      }]
+      attributes: [
+        {
+          format: "float32x2",
+          offset: 0,
+          shaderLocation: 0,
+        },
+      ],
     };
 
+    // uniforms
+    this.buffers["uniform"] = this.device.createBuffer({
+      label: "uniform",
+      size: this.engineData.color.byteLength,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
     this.loadShaderModules();
-    this.gpuRenderPipelines['base'] = this.createRenderPipeline();
+    this.gpuRenderPipelines["base"] = this.createRenderPipeline();
 
+    this.bindGroups["bg1"] = this.device.createBindGroup({
+      label: "base renderer uniform",
+      layout: this.gpuRenderPipelines["base"].getBindGroupLayout(0),
+      entries: [
+        {
+          binding: 0,
+          resource: { buffer: this.buffers["uniform"] },
+        },
+      ],
+    });
 
-    this.runAsync().then(_r => {});
+    this.runAsync();
   }
 }

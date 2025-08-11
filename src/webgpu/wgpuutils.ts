@@ -1,4 +1,4 @@
-export async function isWgpuSupported() {
+export function isWgpuSupported() {
   return navigator.gpu;
 }
 
@@ -18,7 +18,6 @@ export async function getWgpuAdadpterAndDevice(
 
   return { adapter, device };
 }
-
 
 export function getNotNull<T>(obj: T | null, message?: string): T {
   if (obj === null) {

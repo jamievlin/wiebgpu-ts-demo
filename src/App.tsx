@@ -1,28 +1,18 @@
 import "./App.css";
-import { useEffect, useRef } from "react";
-import { getWgpuAdadpterAndDevice, isWgpuSupported } from "./webgpu/wgpuutils.ts";
-import { WebgpuEngine } from "./webgpu/WebgpuEngine.ts";
-
+import { InnerWgpuApp } from "./InnerWgpuApp";
+import { isWgpuSupported } from "./webgpu/wgpuutils";
 export default function App() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const asyncFn = async () => {
-      const {adapter, device} = await getWgpuAdadpterAndDevice();
-      if (!device) {
-        throw new Error("cannot get webgpu device")
-      }
-      return new WebgpuEngine(canvasRef.current!, device);
-    }
-    asyncFn().then((engine) => {
-      engine.startEngine()
-    })
-
-    }, []);
+  const drawingCanv = isWgpuSupported() ? (
+    <InnerWgpuApp width={500} height={500}></InnerWgpuApp>
+  ) : (
+    <>
+      <p>Sorry, webgpu not supported :(</p>
+    </>
+  );
 
   return (
     <>
-      <canvas width={500} height={500} ref={canvasRef}></canvas>
+      {drawingCanv}
       <br />
       <p>hi hello</p>
     </>
